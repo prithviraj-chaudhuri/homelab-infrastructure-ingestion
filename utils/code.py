@@ -5,7 +5,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def clone_repo(git_url, target_dir):
+def clone_repo(git_url, target_dir)-> None:
+    if not git_url:
+        logger.error("Git URL is not provided. Please set the HOMELAB_GIT_URL environment variable.")
+        return
+    if not target_dir:
+        logger.error("Target directory is not provided. Please set the LOCAL_GIT_PATH environment variable.")
+        return
+    
     logger.info(f"Cloning repository from {git_url} to {target_dir}")
 
     if os.path.exists(target_dir):
