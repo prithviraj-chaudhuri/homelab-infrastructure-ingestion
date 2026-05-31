@@ -4,7 +4,7 @@ from typing import List, Dict
 
 from pymongo import MongoClient
 
-from langfuse.openai import OpenAI  # ✅ FIXED (Langfuse wrapper)
+from langfuse.openai import OpenAI
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, Distance, VectorParams
@@ -33,9 +33,6 @@ class CodeIndexer:
         self.qdrant_collection = qdrant_collection
         self.embedding_model = embedding_model
 
-        # -----------------------
-        # MongoDB
-        # -----------------------
         self.mongo = MongoClient(self.mongo_uri)
         self.collection = self.mongo[self.mongo_db][self.mongo_collection]
 
@@ -46,20 +43,11 @@ class CodeIndexer:
             mongo_db,
         )
 
-        # -----------------------
-        # Langfuse OpenAI client (FIX)
-        # -----------------------
         self.client = OpenAI()
-
-        # -----------------------
-        # Qdrant
-        # -----------------------
+        
         self.qdrant_client = QdrantClient(url=self.qdrant_url)
         self._ensure_qdrant_collection(self.qdrant_collection)
 
-    # =========================
-    # QDRANT SETUP
-    # =========================
 
     def _ensure_qdrant_collection(self, collection_name: str) -> None:
         try:
@@ -74,10 +62,6 @@ class CodeIndexer:
                 ),
             )
 
-    # =========================
-    # EMBEDDING (LANGFUSE SAFE)
-    # =========================
-
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
         Langfuse-traced embeddings via OpenAI SDK wrapper.
@@ -91,10 +75,6 @@ class CodeIndexer:
 
         return [item.embedding for item in response.data]
 
-    # =========================
-    # INDEX FILE
-    # =========================
-
     def index_file(self, file_path: str) -> None:
         chunks = extract_chunks(file_path)
 
@@ -105,9 +85,6 @@ class CodeIndexer:
 
         logger.info("Indexing %s (%d chunks)", file_path, len(chunks))
 
-        # -----------------------
-        # EMBEDDINGS (SAFE)
-        # -----------------------
         vectors = self.embed_texts(texts)
 
         mongo_docs = []
@@ -117,10 +94,6 @@ class CodeIndexer:
             chunk_id = make_id(
                 f"{file_path}:{chunk['symbol']}:{chunk['start_line']}"
             )
-
-            # -----------------------
-            # MONGO
-            # -----------------------
             mongo_doc = {
                 "_id": chunk_id,
                 "file_path": file_path,
@@ -133,9 +106,6 @@ class CodeIndexer:
 
             mongo_docs.append(mongo_doc)
 
-            # -----------------------
-            # QDRANT
-            # -----------------------
             self.qdrant_client.upsert(
                 collection_name=self.qdrant_collection,
                 points=[
@@ -152,9 +122,6 @@ class CodeIndexer:
                 ],
             )
 
-        # -----------------------
-        # BULK MONGO UPSERT
-        # -----------------------
         for doc in mongo_docs:
             self.collection.replace_one(
                 {"_id": doc["_id"]},
@@ -163,10 +130,6 @@ class CodeIndexer:
             )
 
         logger.info("Indexed %s (%d chunks)", file_path, len(chunks))
-
-    # =========================
-    # INDEX REPO
-    # =========================
 
     def index_repo(self) -> None:
         logger.info("Starting repo indexing: %s", self.repo_path)
