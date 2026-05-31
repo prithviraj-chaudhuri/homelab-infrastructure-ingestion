@@ -81,6 +81,7 @@ class CodeIndexer:
         if not chunks:
             return
 
+        file_path = file_path.lstrip("files/code/")
         texts = [build_embedding_text(file_path, c) for c in chunks]
 
         logger.info("Indexing %s (%d chunks)", file_path, len(chunks))
