@@ -17,16 +17,19 @@ def main():
     mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    mongo_db = os.getenv("MONGO_DB", "rag")
+    mongo_collection = os.getenv("MONGO_COLLECTION", "code_chunks")
+    qdrant_collection = os.getenv("QDRANT_COLLECTION", "codebase")
 
     utils.code.clone_repo(git_url, target_dir)
 
     indexer = CodeIndexer(
         repo_path=target_dir,
         mongo_uri=mongo_uri,
-        mongo_db="rag",
-        mongo_collection="code_chunks",
+        mongo_db=mongo_db,
+        mongo_collection=mongo_collection,
         qdrant_url=qdrant_url,
-        qdrant_collection="codebase",
+        qdrant_collection=qdrant_collection,
         embedding_model=embedding_model,
     )
     indexer.index_repo()
