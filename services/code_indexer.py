@@ -47,6 +47,7 @@ class CodeIndexer:
         
         self.qdrant_client = QdrantClient(url=self.qdrant_url)
         self._ensure_qdrant_collection(self.qdrant_collection)
+        self._ensure_mongo_indexes()
 
 
     def _ensure_qdrant_collection(self, collection_name: str) -> None:
@@ -61,6 +62,14 @@ class CodeIndexer:
                     distance=Distance.COSINE,
                 ),
             )
+
+    def _ensure_mongo_indexes(self) -> None:
+        """Create indexes on the MongoDB collection."""
+        try:
+            self.collection.create_index("file_path")
+            logger.info("Created index on file_path for collection %s", self.mongo_collection)
+        except Exception as e:
+            logger.warning("Failed to create index on file_path: %s", e)
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
