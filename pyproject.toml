@@ -12,6 +12,7 @@ dependencies = [
     "langchain-openai>=1.2.2",
     "langchain-qdrant>=1.1.0",
     "langfuse>=4.7.1",
+    "docutils>=0.20.1",
     "logging>=0.4.9.6",
     "pymongo>=4.17.0",
     "qdrant-client>=1.18.0",

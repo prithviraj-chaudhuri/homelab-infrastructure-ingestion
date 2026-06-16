@@ -2,9 +2,13 @@ import ast
 import hashlib
 import re
 import uuid
+from io import StringIO
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 import logging
+
+from docutils import nodes
+from docutils.core import publish_doctree
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +195,123 @@ def extract_file_chunk(source: str, name: str) -> List[Dict]:
     ]
 
 
+def split_chunk_for_embedding(chunk: Dict, max_chars: int = 28000) -> List[Dict]:
+    lines = chunk["code"].splitlines()
+    pieces: List[Dict] = []
+    current_lines: List[str] = []
+    current_length = 0
+    current_start = 0
+
+    def flush_piece(stop_index: int) -> None:
+        nonlocal current_lines, current_length, current_start
+        if not current_lines:
+            return
+
+        start_line = chunk["start_line"] + current_start
+        end_line = chunk["start_line"] + stop_index - 1
+        pieces.append({
+            "type": chunk["type"],
+            "symbol": chunk["symbol"],
+            "start_line": start_line,
+            "end_line": end_line,
+            "code": "\n".join(current_lines),
+        })
+        current_lines = []
+        current_length = 0
+        current_start = stop_index
+
+    for index, line in enumerate(lines, start=0):
+        line_text = line + "\n"
+        line_length = len(line_text)
+        if line_length > max_chars:
+            if current_lines:
+                flush_piece(index)
+            for offset in range(0, len(line_text), max_chars):
+                segment = line_text[offset : offset + max_chars]
+                pieces.append({
+                    "type": chunk["type"],
+                    "symbol": chunk["symbol"],
+                    "start_line": chunk["start_line"] + index,
+                    "end_line": chunk["start_line"] + index,
+                    "code": segment.rstrip("\n"),
+                })
+            current_start = index + 1
+            continue
+
+        if current_length + line_length > max_chars and current_lines:
+            flush_piece(index)
+
+        current_lines.append(line)
+        current_length += line_length
+
+    flush_piece(len(lines))
+
+    if not pieces:
+        return [chunk]
+
+    return pieces
+
+
+def _publish_doctree_safely(source: str, name: str):
+    warning_stream = StringIO()
+    settings_overrides = {
+        "report_level": 5,
+        "halt_level": 6,
+        "warning_stream": warning_stream,
+        "syntax_highlight": "none",
+        "strip_comments": True,
+        "doctitle_xform": False,
+    }
+
+    try:
+        return publish_doctree(source, settings_overrides=settings_overrides)
+    except Exception as exc:
+        logger.warning("Failed to parse RST file %s: %s", name, exc)
+        return None
+
+
+def _max_node_line(node: nodes.Node) -> int | None:
+    line_numbers = [getattr(node, "line", None)]
+    for child in getattr(node, "children", []):
+        child_line = _max_node_line(child)
+        if child_line is not None:
+            line_numbers.append(child_line)
+    return max([num for num in line_numbers if num is not None], default=None)
+
+
+def extract_rst_chunks(source: str, name: str) -> List[Dict]:
+    doctree = _publish_doctree_safely(source, name)
+    if doctree is None:
+        return extract_file_chunk(source, name)
+
+    sections = [
+        node for node in doctree.traverse(nodes.section)
+        if isinstance(node.parent, nodes.document)
+    ]
+
+    if not sections:
+        return extract_file_chunk(source, name)
+
+    chunks: List[Dict] = []
+    for idx, section in enumerate(sections, start=1):
+        title_node = section.next_node(nodes.title)
+        symbol = title_node.astext() if title_node else f"{name}:section{idx}"
+        start_line = section.line or 1
+        end_line = _max_node_line(section) or start_line
+
+        chunks.append(
+            {
+                "type": "rst",
+                "symbol": symbol,
+                "start_line": start_line,
+                "end_line": end_line,
+                "code": section.astext(),
+            }
+        )
+
+    return chunks
+
+
 def is_dockerfile(name: str, suffix: str) -> bool:
     normalized = name.lower()
     return normalized.startswith("dockerfile") or "dockerfile" in normalized or suffix == ""
@@ -210,6 +331,10 @@ def extract_chunks(file_path: str) -> List[Dict]:
 
     if suffix == ".py":
         return extract_python_chunks(file_path)
+
+    if suffix == ".rst":
+        source = read_text_file(file_path)
+        return extract_rst_chunks(source, name)
 
     source = read_text_file(file_path)
 
